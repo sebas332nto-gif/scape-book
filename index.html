@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>El Rastro del Sol · Escape Book</title>
+<style>
+:root{--bg:#0b1218;--fg:#e8eef2;--ac:#35c6e0;--ok:#3ddc84;--bad:#ff5d5d}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,sans-serif}
+body{display:flex;flex-direction:column}
+#stage{flex:1;min-height:0;display:flex;justify-content:center;align-items:center;padding:6px;touch-action:pan-y}
+#page{position:relative;background:#000;box-shadow:0 0 30px #000a;user-select:none}
+#page img{width:100%;height:100%;display:block;pointer-events:none}
+#page input{position:absolute;background:rgba(8,16,24,.55);border:0;border-bottom:3px solid var(--ac);
+ color:#fff;font:700 calc(var(--u)*3.4)/1 system-ui;text-align:center;text-transform:uppercase;padding:0;outline:0;border-radius:3px}
+#page input:focus{background:rgba(53,198,224,.25)}
+#page input.ok{border-color:var(--ok);color:var(--ok)}
+#page input.bad{border-color:var(--bad);animation:s .3s}
+@keyframes s{25%{transform:translateX(-4px)}75%{transform:translateX(4px)}}
+#bar{display:flex;gap:8px;align-items:center;justify-content:center;padding:8px 10px calc(8px + env(safe-area-inset-bottom));background:#111c26;font-size:14px;flex-wrap:wrap}
+button,#go{background:#1d3446;color:var(--fg);border:1px solid #2f5873;border-radius:8px;padding:8px 14px;font-size:15px;cursor:pointer}
+button:disabled{opacity:.35}
+#go{width:64px;text-align:center}
+#msg{min-width:170px;text-align:center;font-weight:600}
+</style></head><body>
+<div id="stage"><div id="page"><img id="img" alt="Página del libro"></div></div>
+<div id="bar">
+ <button id="prev">◀</button>
+ <input id="go" type="number" min="0" aria-label="Ir a página">
+ <button id="next">▶</button>
+ <span id="msg"></span><span id="prog"></span>
+</div>
+<script src="retos.js"></script>
+<script>
+const TOTAL=43, RATIO=595.5/842.25, EDIT=location.search.includes('edit');
+const $=id=>document.getElementById(id), page=$('page'), img=$('img'), go=$('go');
+const load=()=>{try{return JSON.parse(localStorage.getItem('rastro')||'{}')}catch(e){return{}}};
+let S=load(), cur=+(S._p||1);
+const save=()=>{try{S._p=cur;localStorage.setItem('rastro',JSON.stringify(S))}catch(e){}};
+const label=n=>n===1?'Portada':n===TOTAL?'Contra':(n-1);   // n = archivo; número impreso = n-1
+
+function fit(){
+  const st=$('stage'),W=st.clientWidth-12,H=st.clientHeight-12;
+  let w=Math.min(W,H*RATIO),h=w/RATIO;
+  page.style.width=w+'px';page.style.height=h+'px';page.style.setProperty('--u',w/100+'px');
+}
+function show(n){
+  cur=Math.max(1,Math.min(TOTAL,n));
+  img.src='paginas/p-'+String(cur).padStart(2,'0')+'.jpg';
+  [...page.querySelectorAll('input')].forEach(i=>i.remove());
+  RETOS.filter(r=>r.pagina===cur).forEach(buildReto);
+  go.value=label(cur)===+label(cur)?label(cur):0; go.placeholder=label(cur);
+  $('prev').disabled=cur===1;$('next').disabled=cur===TOTAL;
+  $('msg').textContent='';progress();save();
+  [cur+1,cur-1].forEach(k=>{if(k>0&&k<=TOTAL)new Image().src='paginas/p-'+String(k).padStart(2,'0')+'.jpg'});
+}
+function buildReto(r){
+  const inputs=r.campos.map((c,i)=>{
+    const el=document.createElement('input');
+    el.style.cssText=`left:${c.cx-c.w/2}%;top:${c.t}%;width:${c.w}%;height:${c.h}%`;
+    el.maxLength=c.max||c.resp.length;el.autocomplete='off';el.inputMode=/^\d+$/.test(c.resp)?'numeric':'text';
+    el.value=(S[r.id]||[])[i]||'';
+    el.addEventListener('input',()=>{
+      S[r.id]=inputs.map(x=>x.value.trim());save();check(r,inputs);
+      if(el.value.length>=el.maxLength&&inputs[i+1])inputs[i+1].focus();
+    });
+    page.appendChild(el);return el;
+  });
+  check(r,inputs,true);
+}
+function check(r,inputs,silent){
+  const full=inputs.every((el,i)=>el.value.trim().length>=(r.campos[i].max?1:r.campos[i].resp.length));
+  inputs.forEach(el=>el.classList.remove('ok','bad'));
+  if(!full){if(!silent)$('msg').textContent='';progress();return}
+  const ok=inputs.every((el,i)=>el.value.trim().toUpperCase()===r.campos[i].resp.toUpperCase());
+  inputs.forEach(el=>el.classList.add(ok?'ok':'bad'));
+  S[r.id+'_ok']=ok;save();progress();
+  $('msg').textContent=ok?'✔ ¡Correcto! Sigue avanzando':'✖ Algo no cuadra, revisa de nuevo';
+  $('msg').style.color=ok?'var(--ok)':'var(--bad)';
+}
+function progress(){$('prog').textContent='Retos: '+RETOS.filter(r=>S[r.id+'_ok']).length+'/'+RETOS.length}
+
+$('prev').onclick=()=>show(cur-1);$('next').onclick=()=>show(cur+1);
+go.addEventListener('change',()=>{const v=+go.value;if(v>=1)show(v+1)});   // número impreso → archivo
+addEventListener('keydown',e=>{if(e.target.tagName==='INPUT')return;if(e.key==='ArrowRight')show(cur+1);if(e.key==='ArrowLeft')show(cur-1)});
+let x0=null;
+page.addEventListener('touchstart',e=>{x0=e.touches[0].clientX},{passive:true});
+page.addEventListener('touchend',e=>{if(x0===null||EDIT)return;const d=e.changedTouches[0].clientX-x0;if(Math.abs(d)>70)show(cur+(d<0?1:-1));x0=null});
+addEventListener('resize',fit);
+
+if(EDIT){ // modo calibración: arrastra un rectángulo sobre la página y copia los valores
+  let s;
+  page.style.cursor='crosshair';
+  const pt=e=>{const b=page.getBoundingClientRect();return[(e.clientX-b.left)/b.width*100,(e.clientY-b.top)/b.height*100]};
+  page.addEventListener('pointerdown',e=>{if(e.target.tagName!=='INPUT')s=pt(e)});
+  page.addEventListener('pointerup',e=>{if(!s)return;const p=pt(e),f=v=>v.toFixed(1);
+    $('msg').style.color='#fff';
+    $('msg').textContent=`"cx":${f((s[0]+p[0])/2)},"t":${f(Math.min(s[1],p[1]))},"w":${f(Math.abs(p[0]-s[0]))},"h":${f(Math.abs(p[1]-s[1]))}`;s=null});
+}
+fit();show(cur);
+</script></body></html>
